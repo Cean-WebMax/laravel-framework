@@ -307,7 +307,7 @@ class SqlServerGrammar extends Grammar
     {
         $limit = (int) $limit;
 
-        if ($limit && $query->offset > 0) {
+        if ($limit && ($query->offset > 0 || isset($query->unionOffset))) {
             return "fetch next {$limit} rows only";
         }
 
@@ -341,11 +341,40 @@ class SqlServerGrammar extends Grammar
     {
         $offset = (int) $offset;
 
-        if ($offset) {
+        if ($offset || (isset($query->unions) && isset($offset))) {
             return "offset {$offset} rows";
         }
 
         return '';
+    }
+
+    /**
+     * Compile the "union" queries attached to the main query.
+     *
+     * @param  \Illuminate\Database\Query\Builder  $query
+     * @return string
+     */
+    protected function compileUnions(Builder $query)
+    {
+        $sql = '';
+
+        foreach ($query->unions as $union) {
+            $sql .= $this->compileUnion($union);
+        }
+
+        if (! empty($query->unionOrders)) {
+            $sql .= ' '.$this->compileOrders($query, $query->unionOrders);
+        }
+
+        if (isset($query->unionOffset)) {
+            $sql .= ' '.$this->compileOffset($query, $query->unionOffset);
+        }
+
+        if (isset($query->unionLimit)) {
+            $sql .= ' '.$this->compileLimit($query, $query->unionLimit);
+        }
+
+        return ltrim($sql);
     }
 
     /**
