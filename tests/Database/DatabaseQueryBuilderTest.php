@@ -2248,6 +2248,27 @@ class DatabaseQueryBuilderTest extends TestCase
         $builder->union($this->getBuilder()->select('*')->from('dogs')->limit(22));
         $builder->offset(5)->limit(10);
         $this->assertEquals($expectedSql, $builder->toSql());
+
+        $builder = $this->getSqlServerBuilder();
+        $expectedSql = 'select * from (select *, null as [null_sort] from [users]) as [temp_table] union select * from (select *, null as [null_sort] from [users]) as [temp_table] order by [null_sort] asc offset 5 rows fetch next 10 rows only';
+        $builder->select('*')->from('users');
+        $builder->union($this->getSqlServerBuilder()->select('*')->from('users'));
+        $builder->offset(5)->limit(10);
+        $this->assertEquals($expectedSql, $builder->toSql());
+
+        $builder = $this->getSqlServerBuilder();
+        $expectedSql = 'select * from (select [id], [name] from [users]) as [temp_table] union select * from (select [id], [name] from [users]) as [temp_table] order by [id] asc offset 5 rows fetch next 10 rows only';
+        $builder->select(['id', 'name'])->from('users');
+        $builder->union($this->getSqlServerBuilder()->select(['id', 'name'])->from('users'));
+        $builder->offset(5)->limit(10);
+        $this->assertEquals($expectedSql, $builder->toSql());
+
+        $builder = $this->getSqlServerBuilder();
+        $expectedSql = 'select * from (select [id], [name] from [users]) as [temp_table] union select * from (select [id], [name] from [users]) as [temp_table] order by [name] asc offset 5 rows fetch next 10 rows only';
+        $builder->select(['id', 'name'])->from('users');
+        $builder->union($this->getSqlServerBuilder()->select(['id', 'name'])->from('users'));
+        $builder->orderBy('name', 'asc')->offset(5)->limit(10);
+        $this->assertEquals($expectedSql, $builder->toSql());
     }
 
     public function testUnionWithJoin()

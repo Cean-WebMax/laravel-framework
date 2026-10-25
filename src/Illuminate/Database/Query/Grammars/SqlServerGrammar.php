@@ -3,6 +3,7 @@
 namespace Illuminate\Database\Query\Grammars;
 
 use Illuminate\Database\Query\Builder;
+use Illuminate\Database\Query\Expression;
 use Illuminate\Database\Query\JoinLateralClause;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -53,6 +54,17 @@ class SqlServerGrammar extends Grammar
         // An order by clause is required for SQL Server offset to function...
         if ($query->offset && empty($query->orders)) {
             $query->orders[] = ['sql' => '(SELECT 0)'];
+        }
+
+        // Union offset requires an order by clause.
+        // If no columns are selected, one must be added.
+        if ($query->unionOffset && empty($query->unionOrders)) {
+            if ($query->columns[0] === '*') {
+                $query->columns[] = $this->nullSortColumn();
+                $query->orderBy('null_sort');
+            } else {
+                $query->orderBy($query->columns[0]);
+            }
         }
 
         return parent::compileSelect($query);
@@ -330,7 +342,7 @@ class SqlServerGrammar extends Grammar
     {
         $limit = (int) $limit;
 
-        if ($limit && $query->offset > 0) {
+        if ($limit && ($query->offset > 0 || isset($query->unionOffset))) {
             return "fetch next {$limit} rows only";
         }
 
@@ -364,11 +376,43 @@ class SqlServerGrammar extends Grammar
     {
         $offset = (int) $offset;
 
-        if ($offset) {
+        if ($offset || isset($query->unions)) {
             return "offset {$offset} rows";
         }
 
         return '';
+    }
+
+    /**
+     * Compile the "union" queries attached to the main query.
+     *
+     * @param  \Illuminate\Database\Query\Builder  $query
+     * @return string
+     */
+    protected function compileUnions(Builder $query)
+    {
+        $sql = '';
+
+        foreach ($query->unions as $union) {
+            if (isset($query->unionOffset) && in_array('null_sort', array_column($query->unionOrders, 'column'))) {
+                $union['query']->columns[] = $this->nullSortColumn();
+            }
+            $sql .= $this->compileUnion($union);
+        }
+
+        if (! empty($query->unionOrders)) {
+            $sql .= ' '.$this->compileOrders($query, $query->unionOrders);
+        }
+
+        if (isset($query->unionOffset)) {
+            $sql .= ' '.$this->compileOffset($query, $query->unionOffset);
+        }
+
+        if (isset($query->unionLimit)) {
+            $sql .= ' '.$this->compileLimit($query, $query->unionLimit);
+        }
+
+        return ltrim($sql);
     }
 
     /**
@@ -392,6 +436,16 @@ class SqlServerGrammar extends Grammar
     protected function wrapUnion($sql)
     {
         return 'select * from ('.$sql.') as '.$this->wrapTable('temp_table');
+    }
+
+    /**
+     * Get null sort expression.
+     *
+     * @return Expression
+     */
+    private function nullSortColumn()
+    {
+        return new Expression('null as ' . $this->wrap('null_sort'));
     }
 
     /**
